@@ -173,7 +173,7 @@ export const createPollTool = () => {
              existingPoll.status = "closed";
            }
            return createPollMessage(existingPoll);
-         }
+         }                                            
  
          return "No active poll found. To create a poll, send a message requesting money (e.g., 'Need $50 for project expenses')";
        } catch (error) {
@@ -182,7 +182,7 @@ export const createPollTool = () => {
        }
      },
    });
- };
+ };                                                                       
  
  // Export helper functions
  export { createPollMessage, activePolls };
