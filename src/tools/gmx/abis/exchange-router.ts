@@ -1,0 +1,8 @@
+export const exchangeRouter = {
+  "42161": "0x900173A66dbD345006C51fA35fA3aB760FcD843b",
+  "43114": "0x2b76df209E1343da5698AF0f8757f6170162e78b",
+  "43113": "0x2a3aF56db8e936C96D8A98bAf2806C6Ff4C780ED",
+  "421614": "0xbbb774b00102e2866677b9d238b2Ee489779E532",
+};
+
+export default exchangeRouter;
