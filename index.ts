@@ -15,6 +15,16 @@ import { optimismSepolia } from "viem/chains";
 import { getOnChainTools } from "@goat-sdk/adapter-langchain";
 import { PEPE, USDC, erc20 } from "@goat-sdk/plugin-erc20";  
 
+// import { uniswap } from "@goat-sdk/plugin-uniswap";
+
+
+import { sendETH } from "@goat-sdk/wallet-evm";
+import { viem } from "@goat-sdk/wallet-viem";
+import { createMockTool } from "./tools/mockTool";
+import { createPollTool } from "./tools/Poll";
+import { on } from "events";
+
+require("dotenv").config();
 
 
 require("dotenv").config();
@@ -100,4 +110,41 @@ const walletClient = createWalletClient({
     whatsappClient.on("message_reaction", async (message) => {
       // console.log("message_reaction event received:", message);
     });
-  
+    
+    whatsappClient.on("message_create", async (message) => {
+        console.log(
+          "\n\nFrom",
+          message.from.toString(),
+          "Message",
+          message.body,
+          "To: ",
+          message.to.toString()
+        );
+    
+        // console.log(message);
+        if (message.body && message.from.toString() != "918682028711@c.us") {
+          try {
+            const response = await agentExecutor.invoke({
+              input:
+                message.body +
+                " From: " +
+                message.from.toString() +
+                " Chat ID: " +
+                message.from.toString(),
+            });
+    
+            // Send the agent's response back to WhatsApp
+            await message.reply(response.output);
+          } catch (error) {
+            console.error("Error processing agent request:", error);
+            await message.reply(
+              "Sorry, I encountered an error processing your request."
+            );
+          }
+        }
+      });
+    
+      // Initialize WhatsApp client
+      whatsappClient.initialize();
+    })();
+    
