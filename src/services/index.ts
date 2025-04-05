@@ -1,4 +1,4 @@
-import { TradingService } from "./TradingService.js";
+import { TradingService } from "../../utils/gmx/TradingService.js";
 
 /**
  * Load all available services

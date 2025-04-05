@@ -1,7 +1,7 @@
-import { placeTrade } from "../../utils/gmx/index.js";
-import { processCandles } from "../../utils/candles.js";
-import { processSentimentCryptoPanic } from "../../utils/cryptopanic.js";
-import { generateEmbeddings } from "../../utils/supavec.js";
+import { placeTrade } from "./index.js";
+import { processCandles } from "../candles.js";
+import { processSentimentCryptoPanic } from "../cryptopanic.js";
+import { generateEmbeddings } from "../supavec.js";
 
 export class TradingService {
     constructor(agent) {
