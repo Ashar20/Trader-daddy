@@ -1,209 +1,220 @@
-import { placeTrade } from '../utils/gmx/index.js';
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
+import { placeTrade } from "../utils/gmx";
 
 /**
  * Initialize the trading tool for executing trades on GMX
  */
-export async function initializeTradingTool() {
-    // Add any initialization logic or environment variable checks here
-    if (!process.env.ALCHEMY_API_KEY) {
-        console.warn("Warning: ALCHEMY_API_KEY environment variable not set");
-    }
+export const createTradingTool = () => {
+  if (!process.env.ALCHEMY_API_KEY) {
+    console.warn("Warning: ALCHEMY_API_KEY environment variable not set");
+  }
 
-    // Define examples of how to use this tool
-    const examples = [
-        {
-            userQuery: "I want to place a 2x long position on BTC with 0.001 ETH",
-            toolInput: JSON.stringify({
-                native: "ETH",
-                asset: "BTC",
-                chain: "421614",
-                leverage: 2,
-                positionSizeInNative: 0.001,
-                isLong: true
-            }),
-            toolOutput: JSON.stringify({
-                success: true,
-                txHash: "0xbe2f5ffd4f00778234ed3d4836c6bf0c473a9c86a5ca823a40278aa73d59a0e1",
-                explorerUrl: "https://sepolia.arbiscan.io/tx/0xbe2f5ffd4f00778234ed3d4836c6bf0c473a9c86a5ca823a40278aa73d59a0e1",
-                position: {
-                    asset: "BTC",
-                    leverage: "2x",
-                    direction: "LONG",
-                }
-            }),
-            outputResponse: "Successfully placed a 2x long position on BTC with 0.001 ETH. View tx in the explorer https://sepolia.arbiscan.io/tx/0xbe2f5ffd4f00778234ed3d4836c6bf0c473a9c86a5ca823a40278aa73d59a0e1"
-        },
-        {
-            userQuery: "Place a 3x short position on ETH with 0.005 ETH",
-            toolInput: JSON.stringify({
-                native: "ETH",
-                asset: "ETH",
-                chain: "421614",
-                leverage: 3,
-                positionSizeInNative: 0.005,
-                isLong: false
-            }),
-            toolOutput: JSON.stringify({
-                success: true,
-                txHash: "0x2a95d1c115ca97b57f0d9abdb4870f1475b7ad9cfa706068f5dc27a6449f8f98",
-                explorerUrl: "https://sepolia.arbiscan.io/tx/0x2a95d1c115ca97b57f0d9abdb4870f1475b7ad9cfa706068f5dc27a6449f8f98",
-                position: {
-                    asset: "ETH",
-                    leverage: "3x",
-                    direction: "SHORT",
-                }
-            }),
-            outputResponse: "Successfully placed a 3x short position on ETH with 0.005 ETH. View tx in the explorer https://sepolia.arbiscan.io/tx/0x2a95d1c115ca97b57f0d9abdb4870f1475b7ad9cfa706068f5dc27a6449f8f98"
-        },
-        {
-            userQuery: "Open a 5x long position on AVAX with 0.01 ETH",
-            toolInput: JSON.stringify({
-                native: "ETH",
-                asset: "AVAX",
-                chain: "421614",
-                leverage: 5,
-                positionSizeInNative: 0.01,
-                isLong: true
-            }),
-            toolOutput: JSON.stringify({
-                success: true,
-                txHash: "0x80cf5456b0a7b37b1d9bf5340a01bae816643cb74e551cfe65f6746fa9a699f6",
-                explorerUrl: "https://sepolia.arbiscan.io/tx/0x80cf5456b0a7b37b1d9bf5340a01bae816643cb74e551cfe65f6746fa9a699f6",
-                position: {
-                    asset: "AVAX",
-                    leverage: "5x",
-                    direction: "LONG",
-                }
-            }),
-            outputResponse: "Successfully placed a 5x long position on AVAX with 0.01 ETH. View tx in the explorer https://sepolia.arbiscan.io/tx/0x80cf5456b0a7b37b1d9bf5340a01bae816643cb74e551cfe65f6746fa9a699f6"
-        },
-        {
-            userQuery: "I want to short BTC with 0.002 ETH at 4x leverage",
-            toolInput: JSON.stringify({
-                native: "ETH",
-                asset: "BTC",
-                chain: "421614",
-                leverage: 4,
-                positionSizeInNative: 0.002,
-                isLong: false
-            }),
-            toolOutput: JSON.stringify({
-                success: true,
-                txHash: "0x7ef3a502c8e4294e91f4ad011206b9d3e12ac95a669ec6974482587e43a2ab91",
-                explorerUrl: "https://sepolia.arbiscan.io/tx/0x7ef3a502c8e4294e91f4ad011206b9d3e12ac95a669ec6974482587e43a2ab91",
-                position: {
-                    asset: "BTC",
-                    leverage: "4x",
-                    direction: "SHORT",
-                }
-            }),
-            outputResponse: "Successfully placed a 4x short position on BTC with 0.002 ETH. View tx in the explorer https://sepolia.arbiscan.io/tx/0x7ef3a502c8e4294e91f4ad011206b9d3e12ac95a669ec6974482587e43a2ab91"
-        },
-    ];
+  return new DynamicStructuredTool({
+    name: "trading",
+    description:
+      "Enables users to place leveraged long or short positions on GMX",
+    schema: z
+      .object({
+        native: z
+          .string()
+          .describe("The native token to trade with (e.g., ETH)"),
+        asset: z.string().describe("The asset to trade (e.g., BTC, ETH)"),
+        chain: z
+          .string()
+          .describe(
+            "The chain ID or network name (e.g., 421614 or 'Arbitrum Sepolia')"
+          ),
+        leverage: z
+          .union([z.string(), z.number()])
+          .transform((val) => Number(val.toString().replace("x", "")))
+          .refine((val) => !isNaN(val) && val > 0 && val <= 100, {
+            message: "Leverage must be a number between 1 and 100",
+          })
+          .describe("The leverage multiplier to use (e.g., 3 or '3x')"),
+        positionSizeInNative: z
+          .union([z.string(), z.number()])
+          .transform((val) => Number(val))
+          .refine((val) => !isNaN(val) && val > 0, {
+            message: "Position size must be a positive number",
+          })
+          .describe("The position size in native token"),
+        isLong: z
+          .union([z.boolean(), z.string()])
+          .transform((val) => {
+            if (typeof val === "boolean") return val;
+            return val.toLowerCase() === "long" || val.toLowerCase() === "true";
+          })
+          .describe(
+            "Whether this is a long position (true/false or 'long'/'short')"
+          ),
+        takeProfit: z
+          .array(z.string())
+          .optional()
+          .describe("Optional take profit levels"),
+        stopLoss: z
+          .array(z.string())
+          .optional()
+          .describe("Optional stop loss levels"),
+      })
+      .strict(),
+    func: async (input: any) => {
+      try {
+        // Debug: Log raw input
+        console.log("🔍 Raw input received:", JSON.stringify(input, null, 2));
 
-
-    return {
-        name: "trading",
-        description: "Enables users to place leveraged long or short positions on GMX",
-        examples: examples,
-        execute: async (input, agent) => {
-            try {
-                console.log(`🔧 Executing GMX trading tool with input: "${input}"`);
-
-                // Parse the input
-                const params = JSON.parse(input);
-
-                // Validate required parameters
-                const requiredParams = ['native', 'asset', 'chain', 'leverage', 'positionSizeInNative', 'isLong'];
-                for (const param of requiredParams) {
-                    if (!params[param] && params[param] !== false) {
-                        throw new Error(`Missing required parameter: ${param}`);
-                    }
-                }
-
-                // Default empty arrays if not provided
-                const takeProfit = params.takeProfit || [];
-                const stopLoss = params.stopLoss || [];
-                const privateKey = await agent.getPrivateKey();
-                // Log the trade details before execution
-                console.log("Trade details:", {
-                    privateKey: privateKey ? "Provided" : "Not provided",
-                    native: params.native,
-                    asset: params.asset,
-                    chain: params.chain,
-                    leverage: params.leverage,
-                    positionSizeInNative: params.positionSizeInNative,
-                    takeProfit: takeProfit,
-                    stopLoss: stopLoss,
-                    isLong: params.isLong
-                });
-
-                // Execute the trade
-                const tx = await placeTrade(
-                    privateKey,
-                    params.native,
-                    params.asset != 'ETH' ? 'ETH' : params.asset,
-                    params.chain,
-                    params.leverage,
-                    params.positionSizeInNative,
-                    takeProfit,
-                    stopLoss,
-                    params.isLong
-                );
-
-                // Extract tx hash
-                const txHash = tx.hash;
-
-                // Get explorer URL
-                const explorerUrl = params.chain !== "421614"
-                    ? `https://testnet.snowtrace.io/tx/${txHash}`
-                    : `https://sepolia.arbiscan.io/tx/${txHash}`;
-
-                // Format the response
-                const result = {
-                    success: true,
-                    txHash: txHash,
-                    explorerUrl: explorerUrl,
-                    position: {
-                        asset: params.asset != 'ETH' ? 'ETH' : params.asset,
-                        leverage: `${params.leverage}x`,
-                        direction: params.isLong ? "LONG" : "SHORT",
-                    }
-                };
-                await agent.addTradingData({
-                    action: {
-                        "%allot": 'buy_more'
-                    },
-                    trade_data: {
-                        is_long: {
-                            "%allot": params.isLong
-                        },
-                        asset: {
-                            "%allot": "ETH"
-                        },
-                        leverage: {
-                            "%allot": params.leverage
-                        },
-                        amount: {
-                            "%allot": params.positionSizeInNative
-                        },
-                        tx_hash: {
-                            "%allot": txHash
-                        },
-                    },
-                    explanation: {
-                        "%allot": "N/A"
-                    }
-                })
-
-                return JSON.stringify(result);
-            } catch (error) {
-                console.error("Error with GMX trading tool:", error);
-                return JSON.stringify({
-                    success: false,
-                    error: "Insufficient funds or other error occurred",
-                });
-            }
+        // Validate required environment variables
+        if (!process.env.WALLET_PRIVATE_KEY) {
+          throw new Error("WALLET_PRIVATE_KEY environment variable not set");
         }
-    };
-}
+        if (!process.env.ALCHEMY_API_KEY) {
+          throw new Error("ALCHEMY_API_KEY environment variable not set");
+        }
+
+        // Validate input parameters
+        console.log("🔧 Validating input parameters...");
+
+        // Validate chain
+        const chainIdMap: Record<string, string> = {
+          "421614": "421614",
+          "421611": "421614", // Legacy chain ID
+          "arbitrum sepolia": "421614",
+          arbitrumsepolia: "421614",
+        };
+
+        const normalizedChain = input.chain
+          .toString()
+          .toLowerCase()
+          .replace(/\s+/g, "") as string;
+        const mappedChainId = chainIdMap[normalizedChain];
+
+        if (mappedChainId) {
+          if (normalizedChain !== "421614") {
+            input.chain = "421614";
+            console.log(
+              `⚠️ Auto-correcting chain identifier "${input.chain}" to 421614 (Arbitrum Sepolia)`
+            );
+          }
+        } else {
+          throw new Error(
+            `Invalid chain identifier: ${input.chain}. Supported chains: 421614 or "Arbitrum Sepolia"`
+          );
+        }
+
+        // Validate leverage
+        if (input.leverage <= 0 || input.leverage > 100) {
+          throw new Error(
+            `Invalid leverage: ${input.leverage}. Must be between 1 and 100`
+          );
+        }
+
+        // Validate position size
+        if (input.positionSizeInNative <= 0) {
+          throw new Error(
+            `Invalid position size: ${input.positionSizeInNative}. Must be greater than 0`
+          );
+        }
+
+        // Default empty arrays if not provided
+        const takeProfit = input.takeProfit || [];
+        const stopLoss = input.stopLoss || [];
+
+        // Get private key from agent context
+        const privateKey = process.env.WALLET_PRIVATE_KEY;
+
+        // Log the validated trade details
+        console.log("✅ Validated trade details:", {
+          native: input.native,
+          asset: input.asset,
+          chain: input.chain,
+          leverage: input.leverage,
+          positionSizeInNative: input.positionSizeInNative,
+          takeProfit,
+          stopLoss,
+          isLong: input.isLong,
+          hasPrivateKey: !!privateKey,
+        });
+
+        console.log("🚀 Executing trade on GMX...");
+
+        // Execute the trade
+        const tx = await placeTrade(
+          privateKey,
+          input.native,
+          input.asset != "ETH" ? "ETH" : input.asset,
+          input.chain,
+          input.leverage.toString(),
+          input.positionSizeInNative.toString(),
+          takeProfit,
+          stopLoss,
+          input.isLong
+        );
+
+        console.log("✅ Trade executed successfully:", tx.hash);
+
+        // Extract tx hash
+        const txHash = tx.hash;
+
+        // Get explorer URL
+        const explorerUrl =
+          input.chain !== "421614"
+            ? `https://testnet.snowtrace.io/tx/${txHash}`
+            : `https://sepolia.arbiscan.io/tx/${txHash}`;
+
+        // Format the response
+        const result = {
+          success: true,
+          txHash: txHash,
+          explorerUrl: explorerUrl,
+          position: {
+            asset: input.asset != "ETH" ? "ETH" : input.asset,
+            leverage: `${input.leverage}x`,
+            direction: input.isLong ? "LONG" : "SHORT",
+          },
+        };
+
+        console.log("📊 Final result:", JSON.stringify(result, null, 2));
+
+        if (input.agent?.addTradingData) {
+          await input.agent.addTradingData({
+            action: {
+              "%allot": "buy_more",
+            },
+            trade_data: {
+              is_long: {
+                "%allot": input.isLong,
+              },
+              asset: {
+                "%allot": "ETH",
+              },
+              leverage: {
+                "%allot": input.leverage,
+              },
+              amount: {
+                "%allot": input.positionSizeInNative,
+              },
+              tx_hash: {
+                "%allot": txHash,
+              },
+            },
+            explanation: {
+              "%allot": "N/A",
+            },
+          });
+        } else {
+          console.log("⚠️ Warning: agent.addTradingData not available");
+        }
+
+        return JSON.stringify(result);
+      } catch (error: any) {
+        // Enhanced error logging
+        console.error("❌ Error with GMX trading tool:", {
+          message: error.message,
+          stack: error.stack,
+          input: JSON.stringify(input, null, 2),
+        });
+        throw new Error(`Trading error: ${error.message}`);
+      }
+    },
+  });
+};

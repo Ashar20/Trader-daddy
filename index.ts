@@ -17,9 +17,14 @@ import { PEPE, USDC, erc20 } from "@goat-sdk/plugin-erc20";
 
 import { sendETH } from "@goat-sdk/wallet-evm";
 import { viem } from "@goat-sdk/wallet-viem";
-import { createMockTool } from "./tools/mockTool";
 import { createPollTool } from "./tools/Poll";
 import { WalletManager } from "./utils/WalletManager";
+import { createSearchTool } from "./tools/search";
+import { createPriceTool } from "./tools/price";
+import { createTransactionTool } from "./tools/transaction";
+import { createTransferTool } from "./tools/transfer";
+import { createTradingTool } from "./tools/trading";
+import { createBalanceTool } from "./tools/balance";
 import { on } from "events";
 
 require("dotenv").config();
@@ -29,24 +34,7 @@ const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-extensions",
-      "--disable-software-rasterizer",
-      "--disable-features=site-per-process",
-      "--ignore-certificate-errors",
-      "--no-first-run",
-      "--window-size=1920,1080",
-      "--start-maximized",
-      "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    ],
-    defaultViewport: {
-      width: 1920,
-      height: 1080,
-    },
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
     timeout: 60000,
   },
 });
@@ -63,18 +51,26 @@ const walletClient = createWalletClient({
   account,
   chain: optimismSepolia,
   transport: http(process.env.RPC_PROVIDER_URL),
-}) as WalletClient;
+});
 
 (async (): Promise<void> => {
   // 2. Get your onchain tools for your wallet
   const onchainTools = await getOnChainTools({
-    wallet: viem(walletClient),
-    plugins: [sendETH(), erc20({ tokens: [USDC, PEPE] })],
+    wallet: viem(walletClient as WalletClient),
+    plugins: [],
   });
 
   // Add mock tool to the tools array
-  const tools = [...onchainTools, createMockTool(), createPollTool()];
-
+  const tools = [
+    // ...onchainTools,
+    createPollTool(),
+    createBalanceTool(),
+    createSearchTool(),
+    createPriceTool(),
+    createTransactionTool(),
+    createTransferTool(),
+    createTradingTool(),
+  ];
   // 3. Create the LLM and agent
   const llm = new ChatOpenAI({
     model: "gpt-4",
