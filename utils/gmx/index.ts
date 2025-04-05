@@ -7,7 +7,7 @@ import {
 import dotenv from "dotenv";
 import { zeroAddress } from "viem";
 import dataStore from "./abis/data-store.js";
-import exchangeRouter from "./abis/exchange-router.js";
+import exchangeRouter from "./exchange-router.js";
 import {
   convertEthToAsset,
   expandDecimals,
