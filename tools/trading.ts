@@ -1,4 +1,4 @@
-import { placeTrade } from '../../utils/gmx/index.js';
+import { placeTrade } from '../utils/gmx/index.js';
 
 /**
  * Initialize the trading tool for executing trades on GMX
