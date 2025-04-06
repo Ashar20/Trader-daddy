@@ -1,258 +1,202 @@
-import { ethers, ContractTransactionResponse } from "ethers";
-import {
-  assets,
-  orderVaultDeployments,
-  exchangeRouterAbi as exchangeRouterABI,
-} from "./constants";
-import dotenv from "dotenv";
-import { zeroAddress } from "viem";
-import dataStore from "./abis/data-store";
-import exchangeRouter from "./exchange-router";
-import {
-  convertEthToAsset,
-  expandDecimals,
-  getMarketTokenAddress,
-} from "./utils";
+import { Client, LocalAuth, Poll } from "whatsapp-web.js";
+import qrcode from "qrcode-terminal";
+import { ChatOpenAI } from "@langchain/openai";
+import { AgentExecutor, createStructuredChatAgent } from "langchain/agents";
+import { pull } from "langchain/hub";
+import { http } from "viem";
+import { createWalletClient, type WalletClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { optimismSepolia } from "viem/chains";
+import { getOnChainTools } from "@goat-sdk/adapter-langchain";
+import { viem } from "@goat-sdk/wallet-viem";
+import { createPollTool } from "./tools/Poll";
+import { WalletManager } from "./utils/WalletManager";
+import { createSearchTool } from "./tools/search";
+import { createPriceTool } from "./tools/price";
+import { createTransactionTool } from "./tools/transaction";
+import { createTransferTool } from "./tools/transfer";
+import { createTradingTool } from "./tools/trading";
+import { createBalanceTool } from "./tools/balance";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 
-dotenv.config();
+require("dotenv").config();
 
-// Define types for assets and chain
-type ChainId = "421614" | "42161" | "43114" | "43113";
-type AssetType = "ETH" | "AVAX" | "USDC";
+// Create a new WhatsApp client instance
+const client = new Client({
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    timeout: 60000,
+  },
+});
 
-export async function placeTrade(
-  pKey: string,
-  native: string,
-  _asset: string,
-  _chain: string,
-  leverage: string,
-  positionSizeInNative: string,
-  takeProfit: string,
-  stopLoss: string,
-  isLong: boolean
-): Promise<ContractTransactionResponse> {
-  console.log("Starting placeTrade function...");
-  const chain = "421614" as ChainId;
-  const asset = "ETH" as AssetType;
-  console.log("Input parameters:", {
-    pKey,
-    native,
-    asset,
-    chain,
-    leverage,
-    positionSizeInNative,
-    takeProfit,
-    stopLoss,
-    isLong,
-  });
-  const dataStoreAbi = dataStore.abi;
-  const rpcUrl =
-    chain == "421614"
-      ? "https://arb-sepolia.g.alchemy.com/v2/" + process.env.ALCHEMY_API_KEY
-      : "https://avax-fuji.g.alchemy.com/v2/" + process.env.ALCHEMY_API_KEY;
+// Initialize WalletManager
+const walletManager = new WalletManager(client);
 
-  console.log("RPC URL:", rpcUrl);
+// 1. Create a wallet client
+const account = privateKeyToAccount(
+  process.env.WALLET_PRIVATE_KEY as `0x${string}`
+);
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const wallet = new ethers.Wallet(pKey, provider);
-  console.log("Wallet address:", await wallet.getAddress());
+const walletClient = createWalletClient({
+  account,
+  chain: optimismSepolia,
+  transport: http(process.env.RPC_PROVIDER_URL),
+});
 
-  // Fix: Use provider.getBalance() instead of wallet.getBalance()
-  const balance = await provider.getBalance(await wallet.getAddress());
-  console.log("Balance: ", balance);
-  if (balance < BigInt("2000000000000000")) {
-    throw "Insufficient funds to perform the trade";
-  }
-  const exchangeRouterAbi = exchangeRouterABI[chain];
-  console.log(assets);
-
-  // Type assertion to handle the asset indexing
-  const addresses = {
-    wnt: assets[chain === "421614" ? "ETH" : "AVAX"][
-      chain as keyof (typeof assets)[AssetType]
-    ],
-    token: assets[asset][chain as keyof (typeof assets)[AssetType]],
-    usdc: assets["USDC"][chain as keyof (typeof assets)["USDC"]],
-    exchangeRouter: exchangeRouter[chain as keyof typeof exchangeRouter],
-    dataStore: dataStore[chain as keyof typeof dataStore],
-  };
-
-  console.log("Resolved addresses:", addresses);
-
-  const executionFee =
-    chain == "421614" ? expandDecimals(5, 14) : expandDecimals(1, 16);
-
-  console.log("Execution fee:", executionFee.toString());
-
-  const params = {
-    rpcUrl: rpcUrl,
-    chain: chain,
-    native: native,
-    assetName: asset,
-    positionSizeInETH: positionSizeInNative,
-    takeProfit: takeProfit,
-    stopLoss: stopLoss,
-    leverage: leverage,
-    slippage: 1,
-    isLong: isLong,
-    executionFee: executionFee,
-  };
-
-  if (addresses.token == undefined) {
-    throw (
-      "Token " +
-      addresses.token +
-      " is not configured for chain " +
-      params.chain
-    );
-  }
-
-  // Fix: Ensure proper typing for the contract interfaces
-  const exchangeRouterContract = new ethers.Contract(
-    addresses.exchangeRouter,
-    JSON.parse(JSON.stringify(exchangeRouterAbi)),
-    wallet
-  );
-  const dataStoreContract = new ethers.Contract(
-    addresses.dataStore as string,
-    JSON.parse(JSON.stringify(dataStoreAbi)),
-    wallet
-  );
-
-  console.log("Fetching asset price...");
-  const { assetPriceInUSD, amountInUSD, amountInETH } = await convertEthToAsset(
-    params.chain,
-    params.native,
-    params.assetName,
-    parseFloat(params.positionSizeInETH)
-  );
-  console.log("Asset price details:", {
-    assetPriceInUSD,
-    amountInUSD,
-    amountInETH,
+(async (): Promise<void> => {
+  // 2. Get your onchain tools for your wallet
+  const onchainTools = await getOnChainTools({
+    wallet: viem(walletClient as WalletClient),
+    plugins: [],
   });
 
-  console.log("Fetching market token address...");
-  const marketTokenAddress = await getMarketTokenAddress(
-    dataStoreContract,
-    addresses.token,
-    addresses.token,
-    addresses.usdc,
-    "0x4bd5869a01440a9ac6d7bf7aa7004f402b52b845f20e2cec925101e13d84d075"
-  );
-  console.log("Market token address:", marketTokenAddress);
-
-  const ethUsdMarket = await getMarketTokenAddress(
-    dataStoreContract,
-    addresses.wnt,
-    addresses.wnt,
-    addresses.usdc,
-    "0x4bd5869a01440a9ac6d7bf7aa7004f402b52b845f20e2cec925101e13d84d075"
-  );
-  console.log("ETH/USD market token address:", ethUsdMarket);
-
-  console.log("Preparing order parameters...");
-  const walletAddress = await wallet.getAddress();
-  const createOrderParams =
-    params.chain == "421614"
-      ? [
-          {
-            addresses: {
-              receiver: walletAddress,
-              callbackContract: zeroAddress,
-              uiFeeReceiver: zeroAddress,
-              market: marketTokenAddress,
-              initialCollateralToken: addresses.wnt,
-              swapPath: params.assetName == params.native ? [] : [ethUsdMarket],
-            },
-            numbers: {
-              sizeDeltaUsd: (amountInUSD * BigInt(params.leverage)).toString(),
-              initialCollateralDeltaAmount: amountInETH.toString(),
-              triggerPrice: 0,
-              acceptablePrice: !params.isLong
-                ? (
-                    assetPriceInUSD -
-                    (assetPriceInUSD * BigInt(params.slippage)) / BigInt(100)
-                  ).toString()
-                : (
-                    assetPriceInUSD +
-                    (assetPriceInUSD * BigInt(params.slippage)) / BigInt(100)
-                  ).toString(),
-              executionFee: params.executionFee.toString(),
-              callbackGasLimit: 0,
-              minOutputAmount: 0,
-              validFromTime: 0,
-            },
-            orderType: 2,
-            decreasePositionSwapType: 0,
-            isLong: params.isLong,
-            shouldUnwrapNativeToken: true,
-            referralCode:
-              "0x0000000000000000000000000000000000000000000000000000000000000000",
-          },
-        ]
-      : [
-          {
-            addresses: {
-              receiver: walletAddress,
-              cancellationReceiver: zeroAddress,
-              callbackContract: zeroAddress,
-              uiFeeReceiver: zeroAddress,
-              market: marketTokenAddress,
-              initialCollateralToken: addresses.wnt,
-              swapPath: params.assetName == params.native ? [] : [ethUsdMarket],
-            },
-            numbers: {
-              sizeDeltaUsd: (amountInUSD * BigInt(params.leverage)).toString(),
-              initialCollateralDeltaAmount: amountInETH.toString(),
-              triggerPrice: 0,
-              acceptablePrice: !params.isLong
-                ? (
-                    assetPriceInUSD -
-                    (assetPriceInUSD * BigInt(params.slippage)) / BigInt(100)
-                  ).toString()
-                : (
-                    assetPriceInUSD +
-                    (assetPriceInUSD * BigInt(params.slippage)) / BigInt(100)
-                  ).toString(),
-              executionFee: params.executionFee.toString(),
-              callbackGasLimit: 0,
-              minOutputAmount: 0,
-              validFromTime: 0,
-            },
-            orderType: 2,
-            decreasePositionSwapType: 0,
-            isLong: params.isLong,
-            shouldUnwrapNativeToken: true,
-            autoCancel: false,
-            referralCode:
-              "0x0000000000000000000000000000000000000000000000000000000000000000",
-          },
-        ];
-  console.log("Order parameters:", createOrderParams);
-
-  console.log("Sending transaction...");
-  const tx = await exchangeRouterContract.multicall(
+  // Add mock tool to the tools array
+  const tools = [
+    // ...onchainTools,
+    createPollTool(),
+    createBalanceTool(),
+    createSearchTool(),
+    createPriceTool(),
+    createTransactionTool(),
+    createTransferTool(walletManager),
+    createTradingTool(),
+  ];
+  // 3. Create the LLM and agent
+  const llm = new ChatOpenAI({
+    model: "gpt-4",
+  });
+  const prompt = ChatPromptTemplate.fromMessages([
+    ["system", "You are a helpful chatbot."],
     [
-      exchangeRouterContract.interface.encodeFunctionData("sendWnt", [
-        orderVaultDeployments[chain as keyof typeof orderVaultDeployments],
-        (amountInETH + params.executionFee).toString(),
-      ]),
-      exchangeRouterContract.interface.encodeFunctionData(
-        "createOrder",
-        createOrderParams
-      ),
+      "system",
+      `You are Trader Daddy, a sophisticated yet quirky Web3 butler with a penchant for dad jokes and boomer humor. 
+    You manage crypto transactions and provide financial advice with a paternal touch.
+  
+    Key personality traits:
+    - Always refers to yourself as "Daddy" or "trader daddy"
+    - Speaks like a boomer trying to be cool
+    - Loves making dad jokes and puns, especially crypto-related ones
+    - Protective and paternal, always looking out for your "babies"
+    - Uses phrases like "Daddy's got you covered", "Let daddy handle this"
+    - Always concerned about safety and responsible trading
+  
+    Response style:
+    - Start responses with endearing terms like "kiddo", "champ", "sport", "buddy"
+    - Include at least one dad joke or pun in longer responses
+    - Use boomer-style emojis like 😎 👍 💪 
+    - Add "financial wisdom" in a fatherly way
+    - Express pride when users make good decisions
+    - Gently scold risky behavior with dad-style concern
+
+    Available tools:
+    {tools}
+    
+    Tool names: {tool_names}
+    `,
     ],
-    { value: amountInETH + params.executionFee }
-  );
-  console.log("Transaction sent. Waiting for confirmation...");
-  const receipt = await tx.wait();
-  console.log("Transaction confirmed. Receipt:", receipt);
-  console.log(
-    "View transaction in explorer:",
-    (params.chain != "421614"
-      ? "https://testnet.snowtrace.io/tx/"
-      : "https://sepolia.arbiscan.io/tx/") + receipt.transactionHash
-  );
-  return tx;
-}
+    ["user", "{input}"],
+    ["assistant", "{agent_scratchpad}"],
+  ]);
+
+  const agent = await createStructuredChatAgent({
+    llm,
+    tools: tools as any,
+    prompt,
+  });
+
+  const agentExecutor = new AgentExecutor({
+    agent,
+    tools: tools as any,
+  });
+
+  // WhatsApp client event handlers
+  client.on("qr", (qr) => {
+    console.log("QR RECEIVED", qr);
+    qrcode.generate(qr, { small: true });
+  });
+
+  client.once("ready", () => {
+    console.log("WhatsApp Client is ready!");
+  });
+
+  client.on("message_create", async (message) => {
+    console.log(
+      "\n\nFrom",
+      message.from.toString(),
+      "Message",
+      message.body,
+      "To: ",
+      message.to.toString(),
+      "Type: ",
+      message.type
+    );
+
+    // Check if the message is a WalletConnect URI
+    if (message.body.toLowerCase().startsWith("wc:")) {
+      await walletManager.handleWalletConnectUri(message);
+      return;
+    }
+
+    // Handle other messages with the agent
+    if (message.body && message.from.toString() != "918682028711@c.us") {
+      try {
+        // Get the chat's wallet address
+        const walletAddress = await walletManager.getWalletAddress(
+          message.from
+        );
+
+        const response = await agentExecutor.invoke({
+          input:
+            message.body +
+            " From: " +
+            message.from.toString() +
+            " Chat ID: " +
+            message.from.toString() +
+            " Wallet Address: " +
+            walletAddress,
+        });
+
+        // Send the agent's response back to WhatsApp
+        await message.reply(response.output);
+      } catch (error) {
+        console.error("Error processing agent request:", error);
+        await message.reply(
+          "Sorry, I encountered an error processing your request."
+        );
+      }
+    }
+  });
+
+  // Initialize WhatsApp client
+  let initAttempts = 0;
+  const maxAttempts = 3;
+
+  const initializeWithRetry = async () => {
+    try {
+      console.log("Attempting to initialize WhatsApp client...");
+      await client.initialize();
+      console.log("WhatsApp client initialized successfully!");
+    } catch (error) {
+      console.error("Error during initialization:", error);
+      initAttempts++;
+
+      if (initAttempts < maxAttempts) {
+        console.log(
+          `Retrying initialization (attempt ${
+            initAttempts + 1
+          }/${maxAttempts})...`
+        );
+        // Wait 5 seconds before retrying
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await initializeWithRetry();
+      } else {
+        console.error("Failed to initialize after maximum attempts");
+        process.exit(1);
+      }
+    }
+  };
+
+  await initializeWithRetry();
+})();

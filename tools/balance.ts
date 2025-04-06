@@ -11,6 +11,10 @@ interface JsonRpcResponse {
   jsonrpc: string;
   id: number;
   result: string;
+  error?: {
+    code: number;
+    message: string;
+  };
 }
 
 // Supported chains configuration
@@ -49,6 +53,11 @@ class WalletBalanceTool extends Tool {
       let walletAddress: string;
       let chainId: number = 11155420; // Default to Optimism Sepolia
 
+      // Validate input is not empty
+      if (!input || input.trim() === "") {
+        return "Please provide a wallet address to check the balance.";
+      }
+
       // Check for different input formats
       if (input.includes(" in ")) {
         const [addr, chainName] = input
@@ -64,6 +73,11 @@ class WalletBalanceTool extends Tool {
         walletAddress = input.trim();
       }
 
+      // Validate wallet address format
+      if (!walletAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+        return `Invalid wallet address format: ${walletAddress}. Please provide a valid Ethereum address.`;
+      }
+
       // Validate chain ID
       if (!(chainId in SUPPORTED_CHAINS)) {
         return `Chain ID ${chainId} is not supported. Supported chains: ${Object.keys(
@@ -73,6 +87,10 @@ class WalletBalanceTool extends Tool {
 
       const chain = SUPPORTED_CHAINS[chainId as SupportedChainId];
       const rpcUrl = chain.rpcUrls.default.http[0];
+
+      console.log(
+        `Fetching balance for ${walletAddress} on ${chain.name} (${rpcUrl})`
+      );
 
       // Use viem to get the balance
       const response = await fetch(rpcUrl, {
@@ -88,7 +106,27 @@ class WalletBalanceTool extends Tool {
         }),
       });
 
+      if (!response.ok) {
+        console.error(
+          `RPC request failed: ${response.status} ${response.statusText}`
+        );
+        return "Failed to fetch balance: RPC request failed";
+      }
+
       const data = (await response.json()) as JsonRpcResponse;
+
+      // Check for RPC error response
+      if (data.error) {
+        console.error(`RPC error: ${data.error.message}`);
+        return `Failed to fetch balance: ${data.error.message}`;
+      }
+
+      // Validate result exists and is a valid hex string
+      if (!data.result || !data.result.match(/^0x[a-fA-F0-9]+$/)) {
+        console.error(`Invalid RPC result:`, data);
+        return "Failed to fetch balance: Invalid response from RPC";
+      }
+
       const balanceInWei = BigInt(data.result);
       const balanceInEth = Number(balanceInWei) / 1e18;
 
@@ -97,7 +135,9 @@ class WalletBalanceTool extends Tool {
       } is ${balanceInEth.toFixed(4)} ${chain.nativeCurrency.symbol}`;
     } catch (error) {
       console.error("Error checking balance:", error);
-      return "Sorry, I couldn't fetch the wallet balance at this time.";
+      return `Failed to check balance: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`;
     }
   }
 }
