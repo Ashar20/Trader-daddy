@@ -6,6 +6,7 @@ import {
   polygonAmoy,
   rootstockTestnet,
   optimismSepolia,
+  arbitrumSepolia,
 } from "viem/chains";
 import SignClient from "@walletconnect/sign-client";
 import { SessionTypes, SignClientTypes } from "@walletconnect/types";
@@ -41,6 +42,7 @@ const SUPPORTED_CHAINS = {
   80001: polygonAmoy,
   31337: rootstockTestnet,
   11155420: optimismSepolia,
+  421614: arbitrumSepolia,
 } as const;
 
 type SupportedChainId = keyof typeof SUPPORTED_CHAINS;
@@ -542,6 +544,3 @@ export class WalletManager {
     return wallet.account.address;
   }
 }
-
-
- 
