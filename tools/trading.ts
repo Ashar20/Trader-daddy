@@ -22,14 +22,34 @@ export const createTradingTool = () => {
         asset: z.string().describe("The asset to trade (e.g., BTC, ETH)"),
         chain: z
           .string()
+          .transform((val) => {
+            const chainIdMap: Record<string, string> = {
+              "421614": "421614",
+              "421611": "421614", // Legacy chain ID
+              "arbitrum sepolia": "421614",
+              arbitrumsepolia: "421614",
+            };
+            const normalizedChain = val.toLowerCase().replace(/\s+/g, "");
+            return chainIdMap[normalizedChain] || val;
+          })
           .describe(
             "The chain ID or network name (e.g., 421614 or 'Arbitrum Sepolia')"
           ),
         leverage: z
           .union([z.string(), z.number()])
-          .transform((val) => Number(val.toString().replace("x", "")))
-          .refine((val) => !isNaN(val) && val > 0 && val <= 100, {
-            message: "Leverage must be a number between 1 and 100",
+          .transform((val) => {
+            const numericValue =
+              typeof val === "string"
+                ? Number(val.toString().replace("x", ""))
+                : Number(val);
+            if (
+              isNaN(numericValue) ||
+              numericValue <= 0 ||
+              numericValue > 100
+            ) {
+              throw new Error("Leverage must be a number between 1 and 100");
+            }
+            return numericValue;
           })
           .describe("The leverage multiplier to use (e.g., 3 or '3x')"),
         positionSizeInNative: z
@@ -57,7 +77,7 @@ export const createTradingTool = () => {
           .optional()
           .describe("Optional stop loss levels"),
       })
-      .strict(),
+      .passthrough(), // Allow extra fields instead of strict()
     func: async (input: any) => {
       try {
         // Debug: Log raw input

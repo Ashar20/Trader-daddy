@@ -1,7 +1,7 @@
 import { placeTrade } from "./index.js";
 import { processCandles } from "../candles.js";
-import { processSentimentCryptoPanic } from "../cryptopanic.js";
-import { generateEmbeddings } from "../supavec.js";
+import { processSentimentCryptoPanic } from "./abis/cryptopanic.js";
+import { generateEmbeddings } from "./supavec.js";
 
 export class TradingService {
     constructor(agent) {
