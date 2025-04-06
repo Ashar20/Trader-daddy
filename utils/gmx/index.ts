@@ -1,18 +1,18 @@
-import ethers, { ContractTransactionResponse } from "ethers";
+import { ethers, ContractTransactionResponse } from "ethers";
 import {
   assets,
   orderVaultDeployments,
   exchangeRouterAbi as exchangeRouterABI,
-} from "./constants.js";
+} from "./constants";
 import dotenv from "dotenv";
 import { zeroAddress } from "viem";
-import dataStore from "./abis/data-store.js";
-import exchangeRouter from "./exchange-router.js";
+import dataStore from "./abis/data-store";
+import exchangeRouter from "./exchange-router";
 import {
   convertEthToAsset,
   expandDecimals,
   getMarketTokenAddress,
-} from "./utils.js";
+} from "./utils";
 
 dotenv.config();
 
@@ -114,7 +114,7 @@ export async function placeTrade(
     wallet
   );
   const dataStoreContract = new ethers.Contract(
-    addresses.dataStore,
+    addresses.dataStore as string,
     JSON.parse(JSON.stringify(dataStoreAbi)),
     wallet
   );
@@ -124,7 +124,7 @@ export async function placeTrade(
     params.chain,
     params.native,
     params.assetName,
-    params.positionSizeInETH
+    parseFloat(params.positionSizeInETH)
   );
   console.log("Asset price details:", {
     assetPriceInUSD,
@@ -167,7 +167,7 @@ export async function placeTrade(
             },
             numbers: {
               sizeDeltaUsd: (amountInUSD * BigInt(params.leverage)).toString(),
-              initialCollateralDeltaAmount: 0,
+              initialCollateralDeltaAmount: amountInETH.toString(),
               triggerPrice: 0,
               acceptablePrice: !params.isLong
                 ? (
@@ -204,7 +204,7 @@ export async function placeTrade(
             },
             numbers: {
               sizeDeltaUsd: (amountInUSD * BigInt(params.leverage)).toString(),
-              initialCollateralDeltaAmount: 0,
+              initialCollateralDeltaAmount: amountInETH.toString(),
               triggerPrice: 0,
               acceptablePrice: !params.isLong
                 ? (
